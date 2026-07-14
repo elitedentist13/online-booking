@@ -215,15 +215,22 @@
   }
 
   function apiCall(body) {
-    return fetch(apiUrl(), {
+    var url = apiUrl();
+    var headers = { 'Content-Type': 'application/json' };
+    /* Supabase Edge gateway expects apikey + Authorization even with --no-verify-jwt */
+    if (CFG.anonKey && url && url.indexOf('supabase.co/functions') >= 0) {
+      headers.apikey = CFG.anonKey;
+      headers.Authorization = 'Bearer ' + CFG.anonKey;
+    }
+    return fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify(body)
     }).catch(function () {
       return Promise.reject(Object.assign(new Error(t('errGeneric')), { network: true }));
     }).then(function (r) {
       return r.json().then(function (data) {
-        if (!r.ok) throw Object.assign(new Error(data.error || t('errGeneric')), { data: data, status: r.status });
+        if (!r.ok) throw Object.assign(new Error(data.error || data.message || t('errGeneric')), { data: data, status: r.status });
         apiReachable = true;
         return data;
       });
