@@ -156,12 +156,40 @@
         <p class="ob-confirm-note" id="confirmNote" data-i18n="confirmNote">
           Your booking request has been placed. Our team will contact you to confirm.
         </p>
+        <button type="button" class="ob-btn ob-btn-primary" id="btnShowSummary" data-i18n="summaryOpen" style="margin-top:18px;">
+          Show booking summary
+        </button>
       </div>
     </section>
 
   </main>
 </div>
 
-<script src="book.js?v=20260715-edge-default"></script>
+<!-- Screenshot-friendly booking summary (opens after OTP success) -->
+<div class="ob-overlay" id="summaryOverlay" role="dialog" aria-modal="true" aria-labelledby="summaryTitle">
+  <div class="ob-modal ob-summary-modal" id="summaryCard">
+    <div class="ob-summary-badge" data-i18n="summaryBadge">Booking request received</div>
+    <h2 id="summaryTitle" data-i18n="summaryTitle">Your booking summary</h2>
+    <p class="ob-summary-shot-hint" data-i18n="summaryShotHint">Please take a screenshot of this card for your records.</p>
+    <dl class="ob-summary-list" id="summaryList">
+      <div class="ob-summary-row"><dt data-i18n="summaryRef">Reference</dt><dd id="sumRef">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="name">Your name</dt><dd id="sumName">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="mobile">Mobile</dt><dd id="sumPhone">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="clinic">Clinic</dt><dd id="sumClinic">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="doctor">Doctor</dt><dd id="sumDoctor">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="date">Preferred date</dt><dd id="sumDate">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="time">Preferred time</dt><dd id="sumTime">—</dd></div>
+      <div class="ob-summary-row"><dt data-i18n="reason">Visit reason</dt><dd id="sumReason">—</dd></div>
+    </dl>
+    <p class="ob-summary-note" id="sumNote"></p>
+    <p class="ob-summary-clinic-line" id="sumClinicLine"></p>
+    <div class="ob-summary-actions">
+      <button type="button" class="ob-btn ob-btn-primary" id="btnSummaryShot" data-i18n="summaryShot">Screenshot</button>
+      <button type="button" class="ob-btn ob-btn-ghost" id="btnSummaryClose" data-i18n="summaryClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="book.js?v=20260715-summary-shot"></script>
 </body>
 </html>

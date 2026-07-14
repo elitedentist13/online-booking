@@ -15,6 +15,7 @@
   var calViewMonth = 0;
   var otpRequired = true;
   var pendingOtp = null;
+  var lastBookingDraft = null;
   var resendSecondsLeft = 0;
   var resendTimer = null;
 
@@ -88,7 +89,17 @@
       otpMeta: 'Code sent to {phone}',
       otpSending: 'Sending code…',
       otpVerifying: 'Verifying…',
-      errOtp: 'Enter the code from your SMS.'
+      errOtp: 'Enter the code from your SMS.',
+      summaryBadge: 'Booking request received',
+      summaryTitle: 'Your booking summary',
+      summaryShotHint: 'Please take a screenshot of this card for your records.',
+      summaryRef: 'Reference',
+      summaryClose: 'Done',
+      summaryOpen: 'Show booking summary',
+      summaryShot: 'Screenshot',
+      summaryShotSaving: 'Saving…',
+      summaryShotOk: 'Screenshot saved',
+      summaryShotFail: 'Could not save screenshot. Please use your phone’s screenshot instead.'
     },
     'zh-Hant': {
       title: '網上預約',
@@ -143,7 +154,17 @@
       otpMeta: '驗證碼已發送至 {phone}',
       otpSending: '發送中…',
       otpVerifying: '驗證中…',
-      errOtp: '請輸入短訊中的驗證碼。'
+      errOtp: '請輸入短訊中的驗證碼。',
+      summaryBadge: '預約申請已收到',
+      summaryTitle: '您的預約摘要',
+      summaryShotHint: '請截圖保存此卡，以便自行保留紀錄。',
+      summaryRef: '參考編號',
+      summaryClose: '完成',
+      summaryOpen: '顯示預約摘要',
+      summaryShot: '截圖保存',
+      summaryShotSaving: '保存中…',
+      summaryShotOk: '截圖已保存',
+      summaryShotFail: '無法自動截圖，請改用手機系統截圖功能。'
     },
     'zh-CN': {
       title: '网上预约',
@@ -198,7 +219,17 @@
       otpMeta: '验证码已发送至 {phone}',
       otpSending: '发送中…',
       otpVerifying: '验证中…',
-      errOtp: '请输入短信中的验证码。'
+      errOtp: '请输入短信中的验证码。',
+      summaryBadge: '预约申请已收到',
+      summaryTitle: '您的预约摘要',
+      summaryShotHint: '请截图保存此卡，以便自行保留记录。',
+      summaryRef: '参考编号',
+      summaryClose: '完成',
+      summaryOpen: '显示预约摘要',
+      summaryShot: '截图保存',
+      summaryShotSaving: '保存中…',
+      summaryShotOk: '截图已保存',
+      summaryShotFail: '无法自动截图，请改用手机系统截图功能。'
     }
   };
 
@@ -230,7 +261,13 @@
       return Promise.reject(Object.assign(new Error(t('errGeneric')), { network: true }));
     }).then(function (r) {
       return r.json().then(function (data) {
-        if (!r.ok) throw Object.assign(new Error(data.error || data.message || t('errGeneric')), { data: data, status: r.status });
+        if (!r.ok) {
+          var msg = data.error || data.message || t('errGeneric');
+          if (r.status === 401 || data.code === 'INVALID_CREDENTIALS') {
+            msg = 'Edge Function 401 INVALID_CREDENTIALS: the LIVE function code is rejecting the call. Redeploy THIS repo with: npx supabase functions deploy online-booking --no-verify-jwt --project-ref kprihawipljrltfzpfjd  Then confirm get-options returns handler=joyful-online-booking-otp-v1';
+          }
+          throw Object.assign(new Error(msg), { data: data, status: r.status });
+        }
         apiReachable = true;
         return data;
       });
@@ -970,6 +1007,151 @@
     });
   }
 
+  function clinicLabel(code) {
+    var c = clinics.find(function (x) { return x.clinic_code === code; });
+    if (!c) return code || '—';
+    if (LANG !== 'en' && c.chinese_name) return c.chinese_name + ' · ' + (c.english_name || '');
+    return c.english_name || c.clinic_code || '—';
+  }
+
+  function clinicMetaLine(code) {
+    var c = clinics.find(function (x) { return x.clinic_code === code; });
+    if (!c) return '';
+    var addr = c.address || '';
+    if (LANG !== 'en' && c.address_chinese) addr = c.address_chinese;
+    var parts = [];
+    if (addr) parts.push(addr);
+    if (c.tel) parts.push('Tel: ' + c.tel);
+    return parts.join(' · ');
+  }
+
+  function fillSummaryPopup(res) {
+    var draft = lastBookingDraft || {};
+    var name = (res && res.patient_name) || draft.patient_name || '';
+    var phone = draft.patient_phone ? ('+852 ' + draft.patient_phone) : '';
+    var clinicCode = draft.clinic_tag || '';
+    var doctor = (res && res.doctor_name) || draft.doctor_name || draft.doctor_code || '';
+    var dateIso = (res && res.date) || draft.date || '';
+    var timeRaw = (res && res.start_time) || draft.start_time || '';
+    var arrange = !!(res && res.arrange_requested) || (!timeRaw && !!draft.preferred_session);
+    var reason = draft.reason_label || t('reasonNone');
+    var ref = (res && res.web_booking_ref) || (pendingOtp && pendingOtp.web_booking_ref) || '';
+
+    if ($('sumRef')) $('sumRef').textContent = ref || '—';
+    if ($('sumName')) $('sumName').textContent = name || '—';
+    if ($('sumPhone')) $('sumPhone').textContent = phone || '—';
+    if ($('sumClinic')) $('sumClinic').textContent = clinicLabel(clinicCode);
+    if ($('sumDoctor')) $('sumDoctor').textContent = doctor || '—';
+    if ($('sumDate')) $('sumDate').textContent = dateIso ? fmtDateDisplay(dateIso) : '—';
+    if ($('sumTime')) {
+      $('sumTime').textContent = timeRaw
+        ? fmt12(timeRaw)
+        : (draft.preferred_session
+          ? (t('pickSession') + ': ' + String(draft.preferred_session).toUpperCase() + ' · ' + t('timeTbc'))
+          : t('timeTbc'));
+    }
+    if ($('sumReason')) $('sumReason').textContent = reason || '—';
+    if ($('sumNote')) {
+      $('sumNote').textContent = arrange ? t('confirmNoteArrange') : t('confirmNote');
+    }
+    if ($('sumClinicLine')) {
+      $('sumClinicLine').textContent = clinicMetaLine(clinicCode);
+    }
+  }
+
+  function openSummaryPopup(res) {
+    applyI18n();
+    fillSummaryPopup(res || {});
+    var overlay = $('summaryOverlay');
+    if (overlay) overlay.classList.add('open');
+  }
+
+  function closeSummaryPopup() {
+    var overlay = $('summaryOverlay');
+    if (overlay) overlay.classList.remove('open');
+  }
+
+  function loadHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+      s.onload = function () {
+        if (window.html2canvas) resolve(window.html2canvas);
+        else reject(new Error('html2canvas missing'));
+      };
+      s.onerror = function () { reject(new Error('html2canvas load failed')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function downloadDataUrl(dataUrl, filename) {
+    var a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function screenshotSummary() {
+    var card = $('summaryCard');
+    var btn = $('btnSummaryShot');
+    if (!card || !btn) return;
+    var prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t('summaryShotSaving');
+    card.classList.add('capturing');
+    loadHtml2Canvas().then(function (html2canvas) {
+      return html2canvas(card, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true
+      });
+    }).then(function (canvas) {
+      card.classList.remove('capturing');
+      var ref = (($('sumRef') && $('sumRef').textContent) || 'booking').replace(/[^\w\-]+/g, '_');
+      var filename = 'booking-' + ref + '.png';
+      var dataUrl = canvas.toDataURL('image/png');
+      if (navigator.share && navigator.canShare) {
+        return canvas.toBlob(function (blob) {
+          if (!blob) {
+            downloadDataUrl(dataUrl, filename);
+            btn.disabled = false;
+            btn.textContent = t('summaryShotOk');
+            setTimeout(function () { btn.textContent = t('summaryShot'); }, 1600);
+            return;
+          }
+          var file = new File([blob], filename, { type: 'image/png' });
+          var shareData = { files: [file], title: t('summaryTitle') };
+          if (navigator.canShare(shareData)) {
+            navigator.share(shareData).catch(function () {
+              downloadDataUrl(dataUrl, filename);
+            }).finally(function () {
+              btn.disabled = false;
+              btn.textContent = t('summaryShot');
+            });
+          } else {
+            downloadDataUrl(dataUrl, filename);
+            btn.disabled = false;
+            btn.textContent = t('summaryShotOk');
+            setTimeout(function () { btn.textContent = t('summaryShot'); }, 1600);
+          }
+        });
+      }
+      downloadDataUrl(dataUrl, filename);
+      btn.disabled = false;
+      btn.textContent = t('summaryShotOk');
+      setTimeout(function () { btn.textContent = t('summaryShot'); }, 1600);
+    }).catch(function () {
+      card.classList.remove('capturing');
+      btn.disabled = false;
+      btn.textContent = prev || t('summaryShot');
+      alert(t('summaryShotFail'));
+    });
+  }
+
   function showConfirm(res) {
     $('stepForm').classList.remove('active');
     $('stepOtp').classList.remove('active');
@@ -983,6 +1165,7 @@
     }
     document.title = t('booked');
     stopResendTimer();
+    openSummaryPopup(res);
   }
 
   function stopResendTimer() {
@@ -1108,6 +1291,7 @@
     btn.innerHTML = '<span class="ob-spinner"></span> ' + t('otpSending');
 
     var actionBody = Object.assign({ action: otpRequired ? 'send-otp' : 'request-booking' }, payload);
+    lastBookingDraft = payload;
 
     bookingAction(actionBody).then(function (res) {
       btn.disabled = false;
@@ -1219,6 +1403,29 @@
     $('btnOtpVerify').addEventListener('click', verifyOtpSubmit);
     $('btnOtpResend').addEventListener('click', resendOtpSubmit);
     $('btnOtpBack').addEventListener('click', backFromOtp);
+    if ($('btnSummaryClose')) {
+      $('btnSummaryClose').addEventListener('click', closeSummaryPopup);
+    }
+    if ($('btnSummaryShot')) {
+      $('btnSummaryShot').addEventListener('click', screenshotSummary);
+    }
+    if ($('btnShowSummary')) {
+      $('btnShowSummary').addEventListener('click', function () {
+        openSummaryPopup({
+          web_booking_ref: $('confirmRef').textContent || '',
+          date: lastBookingDraft && lastBookingDraft.date,
+          start_time: lastBookingDraft && lastBookingDraft.start_time,
+          arrange_requested: lastBookingDraft && !lastBookingDraft.start_time,
+          patient_name: lastBookingDraft && lastBookingDraft.patient_name,
+          doctor_name: lastBookingDraft && lastBookingDraft.doctor_name
+        });
+      });
+    }
+    if ($('summaryOverlay')) {
+      $('summaryOverlay').addEventListener('click', function (e) {
+        if (e.target === $('summaryOverlay')) closeSummaryPopup();
+      });
+    }
     $('fOtp').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         e.preventDefault();
